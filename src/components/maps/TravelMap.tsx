@@ -1,7 +1,7 @@
 import type { EChartsOption } from 'echarts';
 import { useEffect, useMemo, useState } from 'react';
-import { chinaCityCoordinates, chinaMapName, chinaMapPath } from '../../data/chinaGeo';
-import { countryCoordinates, worldMapName, worldMapPath } from '../../data/worldGeo';
+import { chinaMapName, chinaMapPath, chinaRegionsPath } from '../../data/chinaGeo';
+import { countryRegionNames, worldMapName, worldMapPath } from '../../data/worldGeo';
 import type { TravelRecord, TravelScope } from '../../types';
 import { formatDate } from '../../utils/date';
 import { getRecordPlaceKey, normalizeCode } from '../../utils/records';
@@ -13,44 +13,66 @@ type TravelMapProps = {
   onSelectRecord: (record: TravelRecord) => void;
 };
 
-type MapPoint = {
-  name: string;
-  value?: [number, number, number];
-  itemStyle: { color: string };
-  records: TravelRecord[];
-  visitCount: number;
-  latestDate: string;
-  plannedCount: number;
+type GeoFeatureCollection = {
+  type: 'FeatureCollection';
+  features: Array<{
+    type: string;
+    properties?: Record<string, unknown>;
+    geometry: unknown;
+  }>;
 };
 
-export function TravelMap({ scope, records, onSelectRecord }: TravelMapProps) {
-  const [geoJson, setGeoJson] = useState<object>();
-  const [mapError, setMapError] = useState<string>();
+type RegionState = {
+  name: string;
+  displayName: string;
+  records: TravelRecord[];
+  visitCount: number;
+  plannedCount: number;
+  latestDate: string;
+};
 
-  const grouped = useMemo(() => {
-    const map = new Map<string, TravelRecord[]>();
-    for (const record of records.filter((item) => item.scope === scope)) {
-      const key = scope === 'china' ? getRecordPlaceKey(record) : normalizeCode(record.countryCode);
-      map.set(key, [...(map.get(key) ?? []), record]);
-    }
-    return map;
-  }, [records, scope]);
+function mergeFeatureCollections(...collections: Array<GeoFeatureCollection | undefined>): GeoFeatureCollection | undefined {
+  const valid = collections.filter(Boolean) as GeoFeatureCollection[];
+  if (valid.length === 0) return undefined;
+  return {
+    type: 'FeatureCollection',
+    features: valid.flatMap((collection) => collection.features),
+  };
+}
+
+function getWorldRegionName(countryCode: string): string {
+  const normalized = normalizeCode(countryCode);
+  return countryRegionNames[normalized] ?? normalized;
+}
+
+export function TravelMap({ scope, records, onSelectRecord }: TravelMapProps) {
+  const [baseGeoJson, setBaseGeoJson] = useState<GeoFeatureCollection>();
+  const [chinaRegionGeoJson, setChinaRegionGeoJson] = useState<GeoFeatureCollection>();
+  const [mapError, setMapError] = useState<string>();
 
   const mapName = scope === 'china' ? chinaMapName : worldMapName;
   const mapPath = scope === 'china' ? chinaMapPath : worldMapPath;
-  const coordinates = scope === 'china' ? chinaCityCoordinates : countryCoordinates;
 
   useEffect(() => {
     const controller = new AbortController();
-    setGeoJson(undefined);
+    setBaseGeoJson(undefined);
+    setChinaRegionGeoJson(undefined);
     setMapError(undefined);
 
-    fetch(`${import.meta.env.BASE_URL}${mapPath}`, { signal: controller.signal })
+    const loadJson = (path: string) => fetch(`${import.meta.env.BASE_URL}${path}`, { signal: controller.signal })
       .then((response) => {
         if (!response.ok) throw new Error(`地图文件加载失败：${response.status}`);
-        return response.json() as Promise<object>;
+        return response.json() as Promise<GeoFeatureCollection>;
+      });
+
+    const requests = [loadJson(mapPath)];
+    if (scope === 'china') requests.push(loadJson(chinaRegionsPath));
+
+    Promise.all(requests)
+      .then(([base, regions]) => {
+        setBaseGeoJson(base);
+        setChinaRegionGeoJson(regions);
       })
-      .then(setGeoJson)
       .catch((error: unknown) => {
         if ((error as Error).name !== 'AbortError') {
           setMapError((error as Error).message || '地图文件加载失败');
@@ -58,100 +80,99 @@ export function TravelMap({ scope, records, onSelectRecord }: TravelMapProps) {
       });
 
     return () => controller.abort();
-  }, [mapPath]);
+  }, [mapPath, scope]);
 
-  const data = useMemo<MapPoint[]>(() => {
-    return Array.from(grouped.entries())
-      .map(([key, items]) => {
-        const visited = items.filter((item) => !item.isPlanned);
-        const planned = items.filter((item) => item.isPlanned);
-        const latest = [...items].sort((a, b) => b.arrivalDate.localeCompare(a.arrivalDate))[0];
-        const coord = coordinates[key];
+  const geoJson = useMemo(
+    () => scope === 'china' ? mergeFeatureCollections(baseGeoJson, chinaRegionGeoJson) : baseGeoJson,
+    [baseGeoJson, chinaRegionGeoJson, scope],
+  );
 
-        return {
-          name: scope === 'china' ? latest.city ?? key : latest.countryName,
-          value: coord ? [coord[0], coord[1], visited.length || planned.length] : undefined,
-          itemStyle: { color: visited.length > 0 ? '#e97855' : '#8ab79b' },
-          records: items,
-          visitCount: visited.length,
-          latestDate: latest.arrivalDate,
-          plannedCount: planned.length,
-        };
-      })
-      .filter((item): item is MapPoint & { value: [number, number, number] } => Boolean(item.value));
-  }, [coordinates, grouped, scope]);
+  const regionStates = useMemo(() => {
+    const map = new Map<string, TravelRecord[]>();
+    for (const record of records.filter((item) => item.scope === scope)) {
+      const key = scope === 'china' ? getRecordPlaceKey(record) : getWorldRegionName(record.countryCode);
+      map.set(key, [...(map.get(key) ?? []), record]);
+    }
 
-  const option: EChartsOption = useMemo(() => ({
-    backgroundColor: 'transparent',
-    tooltip: {
-      trigger: 'item',
-      borderWidth: 0,
-      borderRadius: 12,
-      padding: 12,
-      backgroundColor: 'rgba(36,42,47,0.92)',
-      textStyle: { color: '#fff' },
-      formatter: (params: unknown) => {
-        const item = params as { data?: MapPoint };
-        if (!item.data) return '暂无记录';
-        return `${item.data.name}<br/>到访 ${item.data.visitCount} 次<br/>计划 ${item.data.plannedCount} 次<br/>最近 ${formatDate(item.data.latestDate)}`;
-      },
-    },
-    geo: {
-      map: mapName,
-      roam: true,
-      zoom: scope === 'china' ? 1.22 : 1.08,
-      center: scope === 'china' ? [104.2, 35.8] : [70, 23],
-      itemStyle: {
-        areaColor: '#edf3ef',
-        borderColor: '#cfd9d2',
-        borderWidth: 0.7,
-      },
-      emphasis: {
+    const states = new Map<string, RegionState>();
+    for (const [name, items] of map.entries()) {
+      const visited = items.filter((item) => !item.isPlanned);
+      const planned = items.filter((item) => item.isPlanned);
+      const latest = [...items].sort((a, b) => b.arrivalDate.localeCompare(a.arrivalDate))[0];
+      states.set(name, {
+        name,
+        displayName: scope === 'china' ? latest.city ?? name : latest.countryName,
+        records: items,
+        visitCount: visited.length,
+        plannedCount: planned.length,
+        latestDate: latest.arrivalDate,
+      });
+    }
+    return states;
+  }, [records, scope]);
+
+  const option: EChartsOption = useMemo(() => {
+    const regions = Array.from(regionStates.values()).map((state) => {
+      const visited = state.visitCount > 0;
+      return {
+        name: state.name,
         itemStyle: {
-          areaColor: '#dce7df',
+          areaColor: visited ? '#e97855' : '#a8c9b5',
+          borderColor: visited ? '#c95838' : '#6f927d',
+          borderWidth: visited ? 1.4 : 1.2,
+          opacity: visited ? 0.88 : 0.58,
         },
-        label: {
-          color: '#242a2f',
-        },
-      },
-      select: {
-        itemStyle: {
-          areaColor: '#e97855',
-        },
-      },
-    },
-    series: [
-      {
-        name: '地图',
-        type: 'map',
-        map: mapName,
-        geoIndex: 0,
-        data: [],
-        tooltip: { show: false },
         emphasis: {
-          label: { show: true, color: '#242a2f' },
-          itemStyle: { areaColor: '#dce7df' },
+          itemStyle: {
+            areaColor: visited ? '#f08a67' : '#bad7c4',
+          },
+          label: {
+            color: '#242a2f',
+            fontWeight: 700,
+          },
+        },
+      };
+    });
+
+    return {
+      backgroundColor: 'transparent',
+      tooltip: {
+        trigger: 'item',
+        borderWidth: 0,
+        borderRadius: 12,
+        padding: 12,
+        backgroundColor: 'rgba(36,42,47,0.92)',
+        textStyle: { color: '#fff' },
+        formatter: (params: unknown) => {
+          const item = params as { name?: string };
+          const state = item.name ? regionStates.get(item.name) : undefined;
+          if (!state) return item.name || '暂无记录';
+          return `${state.displayName}<br/>到访 ${state.visitCount} 次<br/>计划 ${state.plannedCount} 次<br/>最近 ${formatDate(state.latestDate)}`;
         },
       },
-      {
-        name: '足迹',
-        type: 'effectScatter',
-        coordinateSystem: 'geo',
-        data,
-        symbolSize: (value: unknown) => {
-          const tuple = value as number[];
-          return Math.min(24, 8 + (tuple?.[2] ?? 1) * 2.4);
-        },
-        rippleEffect: { brushType: 'stroke', scale: 2.4 },
+      geo: {
+        map: mapName,
+        roam: true,
+        zoom: scope === 'china' ? 1.22 : 1.08,
+        center: scope === 'china' ? [104.2, 35.8] : [70, 23],
+        regions,
         itemStyle: {
-          color: '#e97855',
-          shadowBlur: 10,
-          shadowColor: 'rgba(233,120,85,0.28)',
+          areaColor: '#edf3ef',
+          borderColor: '#cfd9d2',
+          borderWidth: 0.7,
         },
-        emphasis: { scale: true },
+        emphasis: {
+          itemStyle: {
+            areaColor: '#dce7df',
+          },
+          label: {
+            color: '#242a2f',
+          },
+        },
       },
-    ],
-  }), [data, mapName, scope]);
+      series: [],
+    };
+  }, [mapName, regionStates, scope]);
 
   return (
     <div>
@@ -165,8 +186,7 @@ export function TravelMap({ scope, records, onSelectRecord }: TravelMapProps) {
         geoJson={geoJson}
         option={option}
         onRegionClick={(name) => {
-          const match = data.find((item) => item.name === name);
-          const first = match?.records[0] ?? records.find((record) => record.city === name || record.countryName === name);
+          const first = regionStates.get(name)?.records[0];
           if (first) onSelectRecord(first);
         }}
       />

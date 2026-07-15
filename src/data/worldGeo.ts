@@ -1,6 +1,17 @@
 export const worldMapName = 'qt-world';
 export const worldMapPath = 'maps/world.json';
 
+export const countryRegionNames: Record<string, string> = {
+  CN: 'China',
+  KR: 'Korea',
+  KP: 'Dem. Rep. Korea',
+  JP: 'Japan',
+  VN: 'Vietnam',
+  US: 'United States',
+  FR: 'France',
+  AU: 'Australia',
+};
+
 export const countryCoordinates: Record<string, [number, number]> = {
   CN: [104, 35],
   KR: [127.8, 36.5],

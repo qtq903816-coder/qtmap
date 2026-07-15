@@ -45,6 +45,10 @@ function getWorldRegionName(countryCode: string): string {
   return countryRegionNames[normalized] ?? normalized;
 }
 
+function getRegionName(params: unknown): string | undefined {
+  return (params as { name?: string }).name;
+}
+
 export function TravelMap({ scope, records, onSelectRecord }: TravelMapProps) {
   const [baseGeoJson, setBaseGeoJson] = useState<GeoFeatureCollection>();
   const [chinaRegionGeoJson, setChinaRegionGeoJson] = useState<GeoFeatureCollection>();
@@ -112,6 +116,11 @@ export function TravelMap({ scope, records, onSelectRecord }: TravelMapProps) {
   }, [records, scope]);
 
   const option: EChartsOption = useMemo(() => {
+    const formatRegionLabel = (params: unknown) => {
+      const name = getRegionName(params);
+      return name ? regionStates.get(name)?.displayName ?? name : '';
+    };
+
     const regions = Array.from(regionStates.values()).map((state) => {
       const visited = state.visitCount > 0;
       return {
@@ -122,11 +131,15 @@ export function TravelMap({ scope, records, onSelectRecord }: TravelMapProps) {
           borderWidth: visited ? 1.4 : 1.2,
           opacity: visited ? 0.88 : 0.58,
         },
+        label: {
+          formatter: formatRegionLabel,
+        },
         emphasis: {
           itemStyle: {
             areaColor: visited ? '#f08a67' : '#bad7c4',
           },
           label: {
+            formatter: formatRegionLabel,
             color: '#242a2f',
             fontWeight: 700,
           },
@@ -144,9 +157,9 @@ export function TravelMap({ scope, records, onSelectRecord }: TravelMapProps) {
         backgroundColor: 'rgba(36,42,47,0.92)',
         textStyle: { color: '#fff' },
         formatter: (params: unknown) => {
-          const item = params as { name?: string };
-          const state = item.name ? regionStates.get(item.name) : undefined;
-          if (!state) return item.name || '暂无记录';
+          const name = getRegionName(params);
+          const state = name ? regionStates.get(name) : undefined;
+          if (!state) return formatRegionLabel(params) || '暂无记录';
           return `${state.displayName}<br/>到访 ${state.visitCount} 次<br/>计划 ${state.plannedCount} 次<br/>最近 ${formatDate(state.latestDate)}`;
         },
       },
@@ -156,6 +169,9 @@ export function TravelMap({ scope, records, onSelectRecord }: TravelMapProps) {
         zoom: scope === 'china' ? 1.22 : 1.08,
         center: scope === 'china' ? [104.2, 35.8] : [70, 23],
         regions,
+        label: {
+          formatter: formatRegionLabel,
+        },
         itemStyle: {
           areaColor: '#edf3ef',
           borderColor: '#cfd9d2',
@@ -166,6 +182,7 @@ export function TravelMap({ scope, records, onSelectRecord }: TravelMapProps) {
             areaColor: '#dce7df',
           },
           label: {
+            formatter: formatRegionLabel,
             color: '#242a2f',
           },
         },

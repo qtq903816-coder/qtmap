@@ -127,9 +127,9 @@ export function TravelMap({ scope, records, onSelectRecord }: TravelMapProps) {
         name: state.name,
         itemStyle: {
           areaColor: visited ? '#e97855' : '#a8c9b5',
-          borderColor: visited ? '#c95838' : '#6f927d',
-          borderWidth: visited ? 1.4 : 1.2,
-          opacity: visited ? 0.88 : 0.58,
+          borderColor: '#ffffff',
+          borderWidth: visited ? 1.8 : 1.5,
+          opacity: visited ? 0.86 : 0.62,
         },
         label: {
           formatter: formatRegionLabel,
@@ -137,6 +137,8 @@ export function TravelMap({ scope, records, onSelectRecord }: TravelMapProps) {
         emphasis: {
           itemStyle: {
             areaColor: visited ? '#f08a67' : '#bad7c4',
+            borderColor: '#ffffff',
+            borderWidth: 2,
           },
           label: {
             formatter: formatRegionLabel,
@@ -187,7 +189,25 @@ export function TravelMap({ scope, records, onSelectRecord }: TravelMapProps) {
           },
         },
       },
-      series: [],
+      series: [
+        {
+          name: '行政边界',
+          type: 'map',
+          map: mapName,
+          geoIndex: 0,
+          silent: true,
+          tooltip: { show: false },
+          itemStyle: {
+            areaColor: 'rgba(255,255,255,0)',
+            borderColor: 'rgba(255,255,255,0.9)',
+            borderWidth: scope === 'china' ? 1.2 : 0.7,
+          },
+          emphasis: {
+            disabled: true,
+          },
+          data: regions,
+        },
+      ],
     };
   }, [mapName, regionStates, scope]);
 

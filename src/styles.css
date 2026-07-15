@@ -1,0 +1,57 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  background: #fbfaf7;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+:root.dark {
+  color-scheme: dark;
+  background: #121619;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+@layer components {
+  .control {
+    @apply rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-ink outline-none transition placeholder:text-slate-400 focus:border-clay focus:ring-2 focus:ring-clay/20 dark:border-white/10 dark:bg-white/5 dark:text-white;
+  }
+
+  .field {
+    @apply text-sm font-medium text-slate-600 dark:text-fog;
+  }
+
+  .action {
+    @apply inline-flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-ink transition hover:border-clay/40 hover:bg-clay/5 dark:border-white/10 dark:bg-white/5 dark:text-white;
+  }
+
+  .action.danger {
+    @apply border-clay/30 text-clay hover:bg-clay/10;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

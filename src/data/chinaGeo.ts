@@ -1,38 +1,5 @@
 export const chinaMapName = 'qt-china';
-
-export const chinaGeoJson = {
-  type: 'FeatureCollection',
-  features: [
-    {
-      type: 'Feature',
-      properties: { name: '中国轮廓', adcode: 'CN', province: '' },
-      geometry: {
-        type: 'Polygon',
-        coordinates: [[
-          [73.5, 39.2],
-          [80.1, 49.2],
-          [91.4, 50.6],
-          [99.8, 42.5],
-          [111.2, 44.3],
-          [119.7, 53.2],
-          [126.8, 49.8],
-          [134.6, 47.8],
-          [129.5, 42.1],
-          [124.2, 39.2],
-          [122.2, 31.3],
-          [118.4, 24.8],
-          [111.7, 21.5],
-          [108.4, 18.4],
-          [100.4, 21.4],
-          [97.2, 27.9],
-          [88.1, 27.7],
-          [79.4, 32.6],
-          [73.5, 39.2],
-        ]],
-      },
-    },
-  ],
-};
+export const chinaMapPath = 'maps/china.json';
 
 export const chinaCityCoordinates: Record<string, [number, number]> = {
   '110000': [116.4, 39.9],

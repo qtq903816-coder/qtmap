@@ -4,7 +4,7 @@ import { useEffect, useRef } from 'react';
 
 type BaseMapProps = {
   mapName: string;
-  geoJson: object;
+  geoJson?: object;
   option: EChartsOption;
   onRegionClick?: (name: string) => void;
 };
@@ -13,11 +13,12 @@ export function BaseMap({ mapName, geoJson, option, onRegionClick }: BaseMapProp
   const ref = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
+    if (!geoJson) return;
     echarts.registerMap(mapName, geoJson as never);
   }, [geoJson, mapName]);
 
   useEffect(() => {
-    if (!ref.current) return undefined;
+    if (!ref.current || !geoJson) return undefined;
     const chart = echarts.getInstanceByDom(ref.current) ?? echarts.init(ref.current);
     chart.setOption(option, true);
     const handleResize = () => chart.resize();
@@ -31,7 +32,16 @@ export function BaseMap({ mapName, geoJson, option, onRegionClick }: BaseMapProp
       window.removeEventListener('resize', handleResize);
       chart.dispose();
     };
-  }, [option, onRegionClick]);
+  }, [geoJson, option, onRegionClick]);
 
-  return <div ref={ref} className="h-[58vh] min-h-[420px] w-full md:h-[640px]" />;
+  return (
+    <div className="relative h-[58vh] min-h-[420px] w-full md:h-[640px]">
+      {!geoJson && (
+        <div className="absolute inset-0 grid place-items-center text-sm text-umber">
+          正在加载地图...
+        </div>
+      )}
+      <div ref={ref} className="h-full w-full" />
+    </div>
+  );
 }

@@ -81,15 +81,13 @@ export function TravelMap({ scope, records, onSelectRecord }: TravelMapProps) {
         return response.json() as Promise<GeoFeatureCollection>;
       });
 
-    const requests = [loadJson(mapPath)];
-    if (scope === 'china') {
-      requests.push(loadJson(chinaCityBoundariesPath), loadJson(chinaRegionsPath));
-    }
+    const requiredRequests = scope === 'china'
+      ? [loadJson(mapPath), loadJson(chinaRegionsPath)]
+      : [loadJson(mapPath)];
 
-    Promise.all(requests)
-      .then(([base, cityBoundaries, regions]) => {
+    Promise.all(requiredRequests)
+      .then(([base, regions]) => {
         setBaseGeoJson(base);
-        setChinaCityGeoJson(cityBoundaries);
         setChinaRegionGeoJson(regions);
       })
       .catch((error: unknown) => {
@@ -97,6 +95,16 @@ export function TravelMap({ scope, records, onSelectRecord }: TravelMapProps) {
           setMapError((error as Error).message || '地图文件加载失败');
         }
       });
+
+    if (scope === 'china') {
+      loadJson(chinaCityBoundariesPath)
+        .then(setChinaCityGeoJson)
+        .catch((error: unknown) => {
+          if ((error as Error).name !== 'AbortError') {
+            console.warn('城市边界文件加载失败，地图将保留基础边界。', error);
+          }
+        });
+    }
 
     return () => controller.abort();
   }, [mapPath, scope]);

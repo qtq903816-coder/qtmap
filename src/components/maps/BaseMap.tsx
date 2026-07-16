@@ -7,17 +7,23 @@ type BaseMapProps = {
   geoJson?: object;
   option: EChartsOption;
   onRegionClick?: (name: string) => void;
+  onRoam?: (state: { center?: unknown; zoom?: number }) => void;
 };
 
-export function BaseMap({ mapName, geoJson, option, onRegionClick }: BaseMapProps) {
+export function BaseMap({ mapName, geoJson, option, onRegionClick, onRoam }: BaseMapProps) {
   const ref = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<echarts.ECharts | null>(null);
   const clickHandlerRef = useRef<typeof onRegionClick>();
+  const roamHandlerRef = useRef<typeof onRoam>();
   const currentMapNameRef = useRef<string>();
 
   useEffect(() => {
     clickHandlerRef.current = onRegionClick;
   }, [onRegionClick]);
+
+  useEffect(() => {
+    roamHandlerRef.current = onRoam;
+  }, [onRoam]);
 
   useEffect(() => {
     if (!geoJson) return;
@@ -29,14 +35,14 @@ export function BaseMap({ mapName, geoJson, option, onRegionClick }: BaseMapProp
     const chart = chartRef.current ?? echarts.getInstanceByDom(ref.current) ?? echarts.init(ref.current);
     chartRef.current = chart;
 
-    const chartOption = chart.getOption() as { geo?: Array<{ center?: unknown; map?: string; zoom?: number }> };
+    const chartOption = (chart.getOption() ?? {}) as { geo?: Array<{ center?: unknown; zoom?: number }> };
     const currentGeo = chartOption.geo?.[0];
     const shouldKeepRoam = currentMapNameRef.current === mapName && typeof currentGeo?.zoom === 'number';
     const nextOption = shouldKeepRoam
       ? {
         ...option,
         geo: {
-          ...(option.geo as object),
+          ...((option.geo ?? {}) as object),
           center: currentGeo?.center,
           zoom: currentGeo?.zoom,
         },
@@ -46,7 +52,7 @@ export function BaseMap({ mapName, geoJson, option, onRegionClick }: BaseMapProp
     chart.setOption(nextOption, false);
     currentMapNameRef.current = mapName;
     chart.resize();
-  }, [geoJson, option]);
+  }, [geoJson, mapName, option]);
 
   useEffect(() => {
     if (!ref.current) return undefined;
@@ -57,12 +63,19 @@ export function BaseMap({ mapName, geoJson, option, onRegionClick }: BaseMapProp
     const handleClick = (params: { name?: string }) => {
       if (params.name) clickHandlerRef.current?.(params.name);
     };
+    const handleRoam = () => {
+      const chartOption = (chart.getOption() ?? {}) as { geo?: Array<{ center?: unknown; zoom?: number }> };
+      const currentGeo = chartOption.geo?.[0];
+      roamHandlerRef.current?.({ center: currentGeo?.center, zoom: currentGeo?.zoom });
+    };
 
     chart.on('click', handleClick);
+    chart.on('georoam', handleRoam);
     window.addEventListener('resize', handleResize);
 
     return () => {
       chart.off('click', handleClick);
+      chart.off('georoam', handleRoam);
       window.removeEventListener('resize', handleResize);
       chart.dispose();
       chartRef.current = null;

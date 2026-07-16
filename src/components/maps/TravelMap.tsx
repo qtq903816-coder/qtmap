@@ -63,6 +63,7 @@ export function TravelMap({ scope, records, onSelectRecord }: TravelMapProps) {
   const [baseGeoJson, setBaseGeoJson] = useState<GeoFeatureCollection>();
   const [chinaCityGeoJson, setChinaCityGeoJson] = useState<GeoFeatureCollection>();
   const [chinaRegionGeoJson, setChinaRegionGeoJson] = useState<GeoFeatureCollection>();
+  const [shouldLoadChinaCityBoundaries, setShouldLoadChinaCityBoundaries] = useState(false);
   const [mapError, setMapError] = useState<string>();
 
   const mapName = scope === 'china' ? chinaMapName : worldMapName;
@@ -73,6 +74,7 @@ export function TravelMap({ scope, records, onSelectRecord }: TravelMapProps) {
     setBaseGeoJson(undefined);
     setChinaCityGeoJson(undefined);
     setChinaRegionGeoJson(undefined);
+    setShouldLoadChinaCityBoundaries(false);
     setMapError(undefined);
 
     const loadJson = (path: string) => fetch(`${import.meta.env.BASE_URL}${path}`, { signal: controller.signal })
@@ -96,18 +98,27 @@ export function TravelMap({ scope, records, onSelectRecord }: TravelMapProps) {
         }
       });
 
-    if (scope === 'china') {
-      loadJson(chinaCityBoundariesPath)
-        .then(setChinaCityGeoJson)
-        .catch((error: unknown) => {
-          if ((error as Error).name !== 'AbortError') {
-            console.warn('城市边界文件加载失败，地图将保留基础边界。', error);
-          }
-        });
-    }
-
     return () => controller.abort();
   }, [mapPath, scope]);
+
+  useEffect(() => {
+    if (scope !== 'china' || !shouldLoadChinaCityBoundaries || chinaCityGeoJson) return undefined;
+
+    const controller = new AbortController();
+    fetch(`${import.meta.env.BASE_URL}${chinaCityBoundariesPath}`, { signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error(`城市边界文件加载失败：${response.status}`);
+        return response.json() as Promise<GeoFeatureCollection>;
+      })
+      .then(setChinaCityGeoJson)
+      .catch((error: unknown) => {
+        if ((error as Error).name !== 'AbortError') {
+          console.warn('城市边界文件加载失败，地图将保留基础边界。', error);
+        }
+      });
+
+    return () => controller.abort();
+  }, [chinaCityGeoJson, scope, shouldLoadChinaCityBoundaries]);
 
   const geoJson = useMemo(
     () => scope === 'china'
@@ -237,6 +248,11 @@ export function TravelMap({ scope, records, onSelectRecord }: TravelMapProps) {
         onRegionClick={(name) => {
           const first = regionStates.get(name)?.records[0];
           if (first) onSelectRecord(first);
+        }}
+        onRoam={({ zoom }) => {
+          if (scope === 'china' && (zoom ?? 0) >= 2) {
+            setShouldLoadChinaCityBoundaries(true);
+          }
         }}
       />
     </div>

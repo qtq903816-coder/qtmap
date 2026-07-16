@@ -1,6 +1,6 @@
 import type { EChartsOption } from 'echarts';
 import { useEffect, useMemo, useState } from 'react';
-import { chinaMapName, chinaMapPath, chinaRegionsPath } from '../../data/chinaGeo';
+import { chinaCityBoundariesPath, chinaMapName, chinaMapPath, chinaRegionsPath } from '../../data/chinaGeo';
 import { countryRegionNames, worldMapName, worldMapPath } from '../../data/worldGeo';
 import type { TravelRecord, TravelScope } from '../../types';
 import { formatDate } from '../../utils/date';
@@ -49,8 +49,19 @@ function getRegionName(params: unknown): string | undefined {
   return (params as { name?: string }).name;
 }
 
+function buildFeatureLabelMap(collection?: GeoFeatureCollection): Map<string, string> {
+  const labels = new Map<string, string>();
+  for (const feature of collection?.features ?? []) {
+    const name = String(feature.properties?.name ?? '');
+    const displayName = String(feature.properties?.displayName ?? feature.properties?.name ?? '');
+    if (name && displayName) labels.set(name, displayName);
+  }
+  return labels;
+}
+
 export function TravelMap({ scope, records, onSelectRecord }: TravelMapProps) {
   const [baseGeoJson, setBaseGeoJson] = useState<GeoFeatureCollection>();
+  const [chinaCityGeoJson, setChinaCityGeoJson] = useState<GeoFeatureCollection>();
   const [chinaRegionGeoJson, setChinaRegionGeoJson] = useState<GeoFeatureCollection>();
   const [mapError, setMapError] = useState<string>();
 
@@ -60,6 +71,7 @@ export function TravelMap({ scope, records, onSelectRecord }: TravelMapProps) {
   useEffect(() => {
     const controller = new AbortController();
     setBaseGeoJson(undefined);
+    setChinaCityGeoJson(undefined);
     setChinaRegionGeoJson(undefined);
     setMapError(undefined);
 
@@ -70,11 +82,14 @@ export function TravelMap({ scope, records, onSelectRecord }: TravelMapProps) {
       });
 
     const requests = [loadJson(mapPath)];
-    if (scope === 'china') requests.push(loadJson(chinaRegionsPath));
+    if (scope === 'china') {
+      requests.push(loadJson(chinaCityBoundariesPath), loadJson(chinaRegionsPath));
+    }
 
     Promise.all(requests)
-      .then(([base, regions]) => {
+      .then(([base, cityBoundaries, regions]) => {
         setBaseGeoJson(base);
+        setChinaCityGeoJson(cityBoundaries);
         setChinaRegionGeoJson(regions);
       })
       .catch((error: unknown) => {
@@ -87,9 +102,13 @@ export function TravelMap({ scope, records, onSelectRecord }: TravelMapProps) {
   }, [mapPath, scope]);
 
   const geoJson = useMemo(
-    () => scope === 'china' ? mergeFeatureCollections(baseGeoJson, chinaRegionGeoJson) : baseGeoJson,
-    [baseGeoJson, chinaRegionGeoJson, scope],
+    () => scope === 'china'
+      ? mergeFeatureCollections(baseGeoJson, chinaCityGeoJson, chinaRegionGeoJson)
+      : baseGeoJson,
+    [baseGeoJson, chinaCityGeoJson, chinaRegionGeoJson, scope],
   );
+
+  const featureLabels = useMemo(() => buildFeatureLabelMap(geoJson), [geoJson]);
 
   const regionStates = useMemo(() => {
     const map = new Map<string, TravelRecord[]>();
@@ -105,7 +124,7 @@ export function TravelMap({ scope, records, onSelectRecord }: TravelMapProps) {
       const latest = [...items].sort((a, b) => b.arrivalDate.localeCompare(a.arrivalDate))[0];
       states.set(name, {
         name,
-        displayName: scope === 'china' ? latest.city ?? name : latest.countryName,
+        displayName: scope === 'china' ? latest.city ?? featureLabels.get(name) ?? name : latest.countryName,
         records: items,
         visitCount: visited.length,
         plannedCount: planned.length,
@@ -113,12 +132,12 @@ export function TravelMap({ scope, records, onSelectRecord }: TravelMapProps) {
       });
     }
     return states;
-  }, [records, scope]);
+  }, [featureLabels, records, scope]);
 
   const option: EChartsOption = useMemo(() => {
     const formatRegionLabel = (params: unknown) => {
       const name = getRegionName(params);
-      return name ? regionStates.get(name)?.displayName ?? name : '';
+      return name ? regionStates.get(name)?.displayName ?? featureLabels.get(name) ?? name : '';
     };
 
     const regions = Array.from(regionStates.values()).map((state) => {
@@ -135,16 +154,7 @@ export function TravelMap({ scope, records, onSelectRecord }: TravelMapProps) {
           formatter: formatRegionLabel,
         },
         emphasis: {
-          itemStyle: {
-            areaColor: visited ? '#f08a67' : '#bad7c4',
-            borderColor: '#ffffff',
-            borderWidth: 2,
-          },
-          label: {
-            formatter: formatRegionLabel,
-            color: '#242a2f',
-            fontWeight: 700,
-          },
+          disabled: true,
         },
       };
     });
@@ -180,18 +190,12 @@ export function TravelMap({ scope, records, onSelectRecord }: TravelMapProps) {
           borderWidth: 0.7,
         },
         emphasis: {
-          itemStyle: {
-            areaColor: '#dce7df',
-          },
-          label: {
-            formatter: formatRegionLabel,
-            color: '#242a2f',
-          },
+          disabled: true,
         },
       },
       series: [
         {
-          name: '行政边界',
+          name: '城市边界',
           type: 'map',
           map: mapName,
           geoIndex: 0,
@@ -199,8 +203,8 @@ export function TravelMap({ scope, records, onSelectRecord }: TravelMapProps) {
           tooltip: { show: false },
           itemStyle: {
             areaColor: 'rgba(255,255,255,0)',
-            borderColor: 'rgba(255,255,255,0.9)',
-            borderWidth: scope === 'china' ? 1.2 : 0.7,
+            borderColor: scope === 'china' ? 'rgba(255,255,255,0.96)' : 'rgba(255,255,255,0.72)',
+            borderWidth: scope === 'china' ? 1.05 : 0.65,
           },
           emphasis: {
             disabled: true,
@@ -209,7 +213,7 @@ export function TravelMap({ scope, records, onSelectRecord }: TravelMapProps) {
         },
       ],
     };
-  }, [mapName, regionStates, scope]);
+  }, [featureLabels, mapName, regionStates, scope]);
 
   return (
     <div>

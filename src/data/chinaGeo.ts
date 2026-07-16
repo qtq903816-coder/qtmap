@@ -1,5 +1,6 @@
 export const chinaMapName = 'qt-china';
 export const chinaMapPath = 'maps/china.json';
+export const chinaCityBoundariesPath = 'maps/china-city-boundaries.json';
 export const chinaRegionsPath = 'maps/china-regions.json';
 
 export const chinaCityCoordinates: Record<string, [number, number]> = {

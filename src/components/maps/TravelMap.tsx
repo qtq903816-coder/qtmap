@@ -59,6 +59,36 @@ function buildFeatureLabelMap(collection?: GeoFeatureCollection): Map<string, st
   return labels;
 }
 
+function buildFeatureNameSet(collection?: GeoFeatureCollection): Set<string> {
+  return new Set((collection?.features ?? [])
+    .map((feature) => String(feature.properties?.name ?? ''))
+    .filter(Boolean));
+}
+
+function normalizePlaceName(value: string): string {
+  return value
+    .trim()
+    .replace(/(特别行政区|自治州|地区|盟|市|区|县)$/u, '');
+}
+
+function findRegionCodeByCityName(record: TravelRecord, featureLabels: Map<string, string>): string | undefined {
+  const city = normalizePlaceName(record.city ?? '');
+  if (!city) return undefined;
+
+  for (const [code, label] of featureLabels.entries()) {
+    const normalizedLabel = normalizePlaceName(label);
+    if (normalizedLabel === city || normalizedLabel.includes(city) || city.includes(normalizedLabel)) {
+      return code;
+    }
+  }
+
+  return undefined;
+}
+
+function getChinaRegionKey(record: TravelRecord, featureLabels: Map<string, string>): string {
+  return record.locationCode?.trim() || findRegionCodeByCityName(record, featureLabels) || getRecordPlaceKey(record);
+}
+
 export function TravelMap({ scope, records, onSelectRecord }: TravelMapProps) {
   const [baseGeoJson, setBaseGeoJson] = useState<GeoFeatureCollection>();
   const [chinaCityGeoJson, setChinaCityGeoJson] = useState<GeoFeatureCollection>();
@@ -68,6 +98,18 @@ export function TravelMap({ scope, records, onSelectRecord }: TravelMapProps) {
 
   const mapName = scope === 'china' ? chinaMapName : worldMapName;
   const mapPath = scope === 'china' ? chinaMapPath : worldMapPath;
+
+  const baseChinaRegionNames = useMemo(
+    () => buildFeatureNameSet(chinaRegionGeoJson),
+    [chinaRegionGeoJson],
+  );
+
+  const hasChinaRecordOutsideInitialRegions = useMemo(() => {
+    if (scope !== 'china' || baseChinaRegionNames.size === 0) return false;
+    return records
+      .filter((record) => record.scope === 'china')
+      .some((record) => !baseChinaRegionNames.has(getRecordPlaceKey(record)));
+  }, [baseChinaRegionNames, records, scope]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -102,7 +144,7 @@ export function TravelMap({ scope, records, onSelectRecord }: TravelMapProps) {
   }, [mapPath, scope]);
 
   useEffect(() => {
-    if (scope !== 'china' || !shouldLoadChinaCityBoundaries || chinaCityGeoJson) return undefined;
+    if (scope !== 'china' || (!shouldLoadChinaCityBoundaries && !hasChinaRecordOutsideInitialRegions) || chinaCityGeoJson) return undefined;
 
     const controller = new AbortController();
     fetch(`${import.meta.env.BASE_URL}${chinaCityBoundariesPath}`, { signal: controller.signal })
@@ -118,7 +160,7 @@ export function TravelMap({ scope, records, onSelectRecord }: TravelMapProps) {
       });
 
     return () => controller.abort();
-  }, [chinaCityGeoJson, scope, shouldLoadChinaCityBoundaries]);
+  }, [chinaCityGeoJson, hasChinaRecordOutsideInitialRegions, scope, shouldLoadChinaCityBoundaries]);
 
   const geoJson = useMemo(
     () => scope === 'china'
@@ -132,7 +174,7 @@ export function TravelMap({ scope, records, onSelectRecord }: TravelMapProps) {
   const regionStates = useMemo(() => {
     const map = new Map<string, TravelRecord[]>();
     for (const record of records.filter((item) => item.scope === scope)) {
-      const key = scope === 'china' ? getRecordPlaceKey(record) : getWorldRegionName(record.countryCode);
+      const key = scope === 'china' ? getChinaRegionKey(record, featureLabels) : getWorldRegionName(record.countryCode);
       map.set(key, [...(map.get(key) ?? []), record]);
     }
 
